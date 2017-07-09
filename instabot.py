@@ -1,6 +1,8 @@
 import requests
 import json
 from termcolor import colored
+from textblob import TextBlob
+from textblob.sentiments import NaiveBayesAnalyzer
 
 BASE_URL = 'https://api.instagram.com/v1/'
 ACCESS_TOKEN = '4392741281.7788e8d.25fc02bdcc8d4d28bb8749bba860571e'
@@ -14,11 +16,10 @@ def start_bot():
     while show_menu:
         menu_choices = menu_choices = "What do you want to do? " \
                                       "\n 1. Read account details" \
-                                      "\n 2. Get details of an user" \
+                                      "\n 2. Get recent media" \
                                       "\n 3. Like it or not " \
-                                      "\n 4. Read a secret message " \
-                                      "\n 5. Read Chats from a user " \
-                                      "\n 6. Close Application \n"
+                                      "\n 4. Comment service " \
+                                      "\n 5. Close Application \n"
         menu_choice = raw_input(menu_choices)
         menu_choice = int(menu_choice)
 
@@ -26,19 +27,16 @@ def start_bot():
             print colored("Read details\n", 'cyan', attrs=['bold'])
             get_info()
         elif menu_choice == 2:
-            print colored("Get details of user using username\n", 'cyan', attrs=['bold'])
-            get_info()
+            print colored("Get recent media\n", 'cyan', attrs=['bold'])
+            media_id = get_recent()
         elif menu_choice == 3:
             print colored("Like it or not\n", 'cyan', attrs=['bold'])
             like_it_or_not()
-            # elif menu_choice == 4:
-            # print colored("Read a secret message\n", 'cyan', attrs=['bold'])
-            # read_message()
-            # elif menu_choice == 5:
-            # print colored("Read existing message\n", 'cyan', attrs=['bold'])
-            # read_existing_chat()
-            # elif menu_choice == 6:
-            # show_menu = False
+        elif menu_choice == 4:
+             print colored("Post or delete a comment\n", 'cyan', attrs=['bold'])
+             post_del_comment()
+        elif menu_choice == 5:
+             show_menu = False
 
 
 def get_info():
@@ -139,9 +137,7 @@ def like_it_or_not():
 
     if CURRENT_ID == []:
         print "Select user first"
-        media_id = get_recent()
-        print media_id
-
+    media_id = get_recent()
     quest = int(raw_input('Select what do you want to do:\n'
                           '1. Get no of likes on recent post.\n'
                           '2. Like a post.\n'
@@ -155,12 +151,61 @@ def like_it_or_not():
         if post_a_like['meta']['code'] == 200:
             print colored('Successfully liked media','yellow',attrs=['bold'])
     if quest ==3:
-        request_url = (BASE_URL + 'media/%s/likes') % (media_id)
+        request_url = (BASE_URL + 'media/%s/likes?access_token=%s') % (media_id,ACCESS_TOKEN)
         payload = {"access_token": ACCESS_TOKEN}
-        delete_a_like = requests.delete(request_url)
-        #if delete_a_like['meta']['code'] == 200:
-            #print colored('Successfully deleted like on media', 'yellow', attrs=['bold'])
+        delete_a_like = requests.delete(request_url).json()
+        if delete_a_like['meta']['code'] == 200:
+            print colored('Successfully deleted like on media', 'yellow', attrs=['bold'])
 
+def post_del_comment():
+    if CURRENT_ID == []:
+        print "Select user first"
 
+    media_id = get_recent()
+
+    quest = int(raw_input('Select what do you want to do:\n'
+                          '1. Comment on recent media.\n'
+                          '2. Delete a negative comment.\n'))
+
+    if quest == 1:
+        comment = raw_input("Enter 'comment' you want to post")
+        payload = {"access_token": ACCESS_TOKEN , 'text': comment}
+        request_url = (BASE_URL + 'media/%s/comments') % (media_id)
+        print media_id
+        post_comment = requests.post(request_url,payload).json()
+        if post_comment['meta']['code'] == 200:
+            print colored('Successfully commented on media', 'yellow', attrs=['bold'])
+        else:
+            print colored('Unable to comment: Try again', 'red', attrs=['bold'])
+
+    if quest == 2:
+        request_url = (BASE_URL + 'media/%s/comments/?access_token=%s') % (media_id,ACCESS_TOKEN)
+        get_comment = requests.get(request_url).json()
+        print get_comment
+        if get_comment['meta']['code'] == 200:
+            if get_comment['meta']['code'] == 200:
+                if len(get_comment['data']):
+                    for x in range(0, len(get_comment['data'])):
+
+                        comment_id = get_comment['data'][x]['id']
+                        comment_text = get_comment['data'][x]['text']
+                        print comment_id
+                        blob = TextBlob(comment_text, analyzer=NaiveBayesAnalyzer())
+                        if (blob.sentiment.p_neg > blob.sentiment.p_pos):
+                            print 'Negative comment : %s' % (comment_text)
+                            delete_url = (BASE_URL + 'media/%s/comments/%s/?access_token=%s') % (media_id, comment_id,
+                                                                                                 ACCESS_TOKEN)
+                            delete_info = requests.delete(delete_url).json()
+
+                            if delete_info['meta']['code'] == 200:
+                                print 'Negative comment successfully deleted'
+                            else:
+                                print 'Unable to delete comment'
+                        else:
+                            print 'No negative comment'
+                else:
+                    print 'There are no existing comments on the post'
+            else:
+                print 'Status code other than 200 recieved'
 
 start_bot()
