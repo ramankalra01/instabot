@@ -3,13 +3,23 @@ import json
 from termcolor import colored
 from textblob import TextBlob
 from textblob.sentiments import NaiveBayesAnalyzer
+import urllib
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+from clarifai import rest
+from clarifai.rest import ClarifaiApp
+from clarifai.rest import Image as ClImage
+
 
 BASE_URL = 'https://api.instagram.com/v1/'
 ACCESS_TOKEN = '4392741281.7788e8d.25fc02bdcc8d4d28bb8749bba860571e'
 
 CURRENT_ID = []
 CURRENT_MEDIA = []
-
+TREND_ANALYSIS_ID = []
+TREND_ANALYSIS_TAGS = []
+IMAGE_NAME = []
+IMAGE_TAGS = []
 
 def start_bot():
     show_menu = True
@@ -19,7 +29,8 @@ def start_bot():
                                       "\n 2. Get recent media" \
                                       "\n 3. Like it or not " \
                                       "\n 4. Comment service " \
-                                      "\n 5. Close Application \n"
+                                      "\n 5. Trend Analysis " \
+                                      "\n 6. Close Application \n"
         menu_choice = raw_input(menu_choices)
         menu_choice = int(menu_choice)
 
@@ -36,7 +47,9 @@ def start_bot():
              print colored("Post or delete a comment\n", 'cyan', attrs=['bold'])
              post_del_comment()
         elif menu_choice == 5:
-             show_menu = False
+            trend_analysis()
+        elif menu_choice == 6:
+            show_menu = False
 
 
 def get_info():
@@ -59,25 +72,28 @@ def get_info():
                     user_name = user_info['data']['username']
                     user = [user_id, user_name]
                     CURRENT_ID.append(user)
-                    return CURRENT_ID
+
 
     elif select == 2:
         print colored("Get details of user using username\n", 'cyan', attrs=['bold'])
         id = get_userID()
         request_url = (BASE_URL + 'users/%s/?access_token=%s') % (id, ACCESS_TOKEN)
         user_info = requests.get(request_url).json()
-        if user_info['meta']['code'] == 200:
-            if len(user_info['data']):
-                print 'Username:' + colored('%s', 'blue', attrs=['bold']) % (user_info['data']['username'])
-                print 'Followers:' + colored('%s', 'green', attrs=['bold']) % (
-                user_info['data']['counts']['followed_by'])
-                print 'Following:' + colored('%s', 'red', attrs=['bold']) % (user_info['data']['counts']['follows'])
-                print 'Posts:' + colored('%s', 'yellow', attrs=['bold']) % (user_info['data']['counts']['media'])
 
-            else:
-                print colored('User has no data', 'red', attrs=['bold'])
+    else:
+        print 'Please select a valid option.'
+
+    if user_info['meta']['code'] == 200:
+        if len(user_info['data']):
+            print 'Username:' + colored('%s', 'blue', attrs=['bold']) % (user_info['data']['username'])
+            print 'Followers:' + colored('%s', 'green', attrs=['bold']) % (user_info['data']['counts']['followed_by'])
+            print 'Following:' + colored('%s', 'red', attrs=['bold']) % (user_info['data']['counts']['follows'])
+            print 'Posts:' + colored('%s', 'yellow', attrs=['bold']) % (user_info['data']['counts']['media'])
+
         else:
-            print colored('Data not found', 'red', attrs=['bold'])
+            print colored('User has no data', 'red', attrs=['bold'])
+    else:
+        print colored('Data not found', 'red', attrs=['bold'])
 
 #quest = raw_input('Do you want to continue with this user? Y/N')
 #if quest.upper() == 'Y':
@@ -130,8 +146,9 @@ def get_recent():
             media_info = [media_ID , media_link , media_type , media_likes , media_user_like]
 
             CURRENT_MEDIA.append(media_info)
+            id = CURRENT_MEDIA[0][0]
 
-    return CURRENT_MEDIA[0][0]
+    return id
 
 def like_it_or_not():
 
@@ -207,5 +224,97 @@ def post_del_comment():
                     print 'There are no existing comments on the post'
             else:
                 print 'Status code other than 200 recieved'
+
+
+
+
+
+def trend_analysis():
+
+    print colored('For proper trend analysis we need some base data.\n'
+                  'Please enter at-least 5 sandbox-username to collect data.\n', 'red', attrs=['bold'])
+    keep_loop_on = True
+
+    while keep_loop_on:
+        question = raw_input('Do you want to add more ID for trend analysis?Y/N')
+        if question.upper() == 'Y':
+            id = get_userID()
+            TREND_ANALYSIS_ID.append(id)
+        if question.upper() == 'N':
+            print 'Following Instagram User-ID were added for trend analysis'
+            print colored(TREND_ANALYSIS_ID,'yellow',attrs=['bold'])
+            keep_loop_on = False
+
+    for item in range (0,len(TREND_ANALYSIS_ID)):
+        temp_id = TREND_ANALYSIS_ID[item]
+        request_url = (BASE_URL+'users/%s/media/recent/?access_token=%s') % (temp_id,ACCESS_TOKEN)
+        user_media = requests.get(request_url).json()
+
+        if user_media['meta']['code'] == 200:
+            if len(user_media['data']):
+                for x in range(0, len(user_media['data'])):
+                    for hashtags in user_media['data'][x]['tags']:
+                        TREND_ANALYSIS_TAGS.append(hashtags)
+
+
+                image_name = user_media['data'][0]['id'] + '.jpeg'
+                IMAGE_NAME.append(image_name)
+                image_url = user_media['data'][0]['images']['standard_resolution']['url']
+                urllib.urlretrieve(image_url,image_name)
+                print 'Image is downloaded'
+            else:
+                print 'Post does not exist'
+        else:
+            print 'Status code other than 200 recieved'
+    tags = " ".join(TREND_ANALYSIS_TAGS)
+
+    quest = raw_input('What do you want to analyse?\n'
+            '1. Analyse trend based on #hashtags\n'
+            '2. Analyse trend based on image analysis\n')
+    question = int(quest)
+    if question == 1:
+        generate_wordcloud(tags)
+    elif question == 2:
+        image_analyser()
+    else:
+        print 'Please select a valid option'
+
+
+
+
+def generate_wordcloud(cloud_text):
+
+    wordcloud = WordCloud(background_color='white',
+                          width=1080,
+                          height=1920).generate(cloud_text)
+    plt.figure()
+    plt.imshow(wordcloud, interpolation="bilinear")
+    plt.axis("off")
+    plt.savefig('cloud.png')
+    plt.show()
+
+
+
+
+def image_analyser():
+
+    for item in range(0,len(IMAGE_NAME)):
+        temp_image = IMAGE_NAME[item]
+        app = ClarifaiApp(api_key='b8d5ac3be8e94320960ce9bb039176a7')
+        model = app.models.get("general-v1.3")
+        image = ClImage(file_obj=open(temp_image, 'rb'))
+        result = model.predict([image])
+        if result:
+            with open('clarifai_result.json', 'w') as outfile3:
+                json.dump(result, outfile3)
+                f3 = open('clarifai_result.json')
+            result = json.load(f3)
+            for x in range(0,len(result['outputs'][0]['data']['concepts'])):
+                model = result['outputs'][0]['data']['concepts'][x]['name']
+                IMAGE_TAGS.append(model)
+
+    tags = " ".join(IMAGE_TAGS)
+    generate_wordcloud(tags)
+
 
 start_bot()
